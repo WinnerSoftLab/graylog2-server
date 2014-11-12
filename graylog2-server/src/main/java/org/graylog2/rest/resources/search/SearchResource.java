@@ -19,21 +19,21 @@ package org.graylog2.rest.resources.search;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import org.apache.lucene.queryparser.classic.ParseException;
-import org.apache.lucene.queryparser.classic.Token;
-import org.elasticsearch.ExceptionsHelper;
 import org.elasticsearch.action.search.SearchPhaseExecutionException;
 import org.elasticsearch.action.search.ShardSearchFailure;
-import org.elasticsearch.search.SearchParseException;
 import org.glassfish.jersey.server.ChunkedOutput;
 import org.graylog2.indexer.IndexHelper;
-import org.graylog2.indexer.results.*;
+import org.graylog2.indexer.results.FieldStatsResult;
+import org.graylog2.indexer.results.HistogramResult;
+import org.graylog2.indexer.results.ScrollResult;
+import org.graylog2.indexer.results.SearchResult;
+import org.graylog2.indexer.results.TermsResult;
+import org.graylog2.indexer.results.TermsStatsResult;
 import org.graylog2.indexer.searches.Searches;
 import org.graylog2.indexer.searches.Sorting;
 import org.graylog2.indexer.searches.timeranges.TimeRange;
 import org.graylog2.rest.resources.RestResource;
 import org.graylog2.rest.resources.search.responses.GenericError;
-import org.graylog2.rest.resources.search.responses.QueryParseError;
 import org.graylog2.rest.resources.search.responses.SearchResponse;
 import org.graylog2.security.RestPermissions;
 import org.slf4j.Logger;
@@ -144,7 +144,7 @@ public class SearchResource extends RestResource {
     protected FieldStatsResult fieldStats(String field, String query, String filter, TimeRange timeRange) throws IndexHelper.InvalidRangeFormatException {
         try {
             return searches.fieldStats(field, query, filter, timeRange);
-        } catch(Searches.FieldTypeException e) {
+        } catch (Searches.FieldTypeException e) {
             LOG.error("Stats query failed. Make sure that field [{}] is a numeric type.", field);
             throw new WebApplicationException(400);
         }
@@ -159,7 +159,7 @@ public class SearchResource extends RestResource {
                     filter,
                     timeRange
             );
-        } catch(Searches.FieldTypeException e) {
+        } catch (Searches.FieldTypeException e) {
             LOG.error("Field histogram query failed. Make sure that field [{}] is a numeric type.", field);
             throw new WebApplicationException(400);
         }
@@ -235,7 +235,7 @@ public class SearchResource extends RestResource {
 
         try {
             return Sorting.fromApiParam(sort);
-        } catch(Exception e) {
+        } catch (Exception e) {
             LOG.error("Falling back to default sorting.", e);
             return Sorting.DEFAULT;
         }
@@ -246,48 +246,12 @@ public class SearchResource extends RestResource {
         // we won't actually iterate over all of the shard failures, only the first one,
         // since we assume that parse errors happen on all of the shards.
         for (ShardSearchFailure failure : e.shardFailures()) {
-            Throwable unwrapped = ExceptionsHelper.unwrapCause(failure.failure());
-            if (!(unwrapped instanceof SearchParseException)) {
-                LOG.warn("Unhandled ShardSearchFailure", e);
-                return new BadRequestException();
-            }
-            Throwable rootCause = ((SearchParseException) unwrapped).getRootCause();
-            if (rootCause instanceof ParseException) {
-
-                Token currentToken = ((ParseException) rootCause).currentToken;
-                SearchResponse sr = new SearchResponse();
-                sr.query = query;
-                sr.error = new QueryParseError();
-                if (currentToken == null) {
-                    LOG.warn("No position/token available for ParseException.");
-                } else {
-                    // scan for first usable token with position information
-                    while (currentToken != null && sr.error.beginLine == 0) {
-                        sr.error.beginColumn = currentToken.beginColumn;
-                        sr.error.beginLine = currentToken.beginLine;
-                        sr.error.endColumn = currentToken.endColumn;
-                        sr.error.endLine = currentToken.endLine;
-
-                        currentToken = currentToken.next;
-                    }
-                }
-                return new BadRequestException(Response.status(Response.Status.BAD_REQUEST).entity(json(sr)).build());
-            } else if(rootCause instanceof NumberFormatException) {
-                final SearchResponse sr = new SearchResponse();
-                sr.query = query;
-                sr.genericError = new GenericError();
-                sr.genericError.exceptionName = rootCause.getClass().getCanonicalName();
-                sr.genericError.message = rootCause.getMessage();
-                return new BadRequestException(Response.status(Response.Status.BAD_REQUEST).entity(json(sr)).build());
-            } else {
-                LOG.info("Root cause of SearchParseException has unexpected, generic type!" + rootCause.getClass());
-                final SearchResponse sr = new SearchResponse();
-                sr.query = query;
-                sr.genericError = new GenericError();
-                sr.genericError.exceptionName = rootCause.getClass().getCanonicalName();
-                sr.genericError.message = rootCause.getMessage();
-                return new BadRequestException(Response.status(Response.Status.BAD_REQUEST).entity(json(sr)).build());
-            }
+            final SearchResponse sr = new SearchResponse();
+            sr.query = query;
+            sr.genericError = new GenericError();
+            sr.genericError.exceptionName = "ShardSearchFailure";
+            sr.genericError.message = failure.reason();
+            return new BadRequestException(Response.status(Response.Status.BAD_REQUEST).entity(json(sr)).build());
         }
 
         return new BadRequestException();
@@ -297,7 +261,7 @@ public class SearchResource extends RestResource {
         if (filter == null || filter.equals("*") || filter.isEmpty()) {
             checkPermission(searchPermission);
         } else {
-            if(!filter.startsWith("streams:")) {
+            if (!filter.startsWith("streams:")) {
                 throw new ForbiddenException("Not allowed to search with filter: [" + filter + "]");
             }
 
@@ -305,14 +269,14 @@ public class SearchResource extends RestResource {
             if (parts.length <= 1) {
                 throw new ForbiddenException("Not allowed to search with filter: [" + filter + "]");
             }
-            
+
             String streamList = parts[1];
             String[] streams = streamList.split(",");
-            if (streams.length == 0 ) {
+            if (streams.length == 0) {
                 throw new ForbiddenException("Not allowed to search with filter: [" + filter + "]");
             }
 
-            for(String streamId : streams) {
+            for (String streamId : streams) {
                 if (!isPermitted(RestPermissions.STREAMS_READ, streamId)) {
                     LOG.warn("Not allowed to search with filter: [" + filter + "]. (Forbidden stream: " + streamId + ")");
                     throw new ForbiddenException();
@@ -333,11 +297,11 @@ public class SearchResource extends RestResource {
                     ScrollResult.ScrollChunk chunk = scroll.nextChunk();
                     while (chunk != null) {
                         LOG.debug("[{}] Writing scroll chunk with {} messages",
-                                  scroll.getQueryHash(),
-                                  chunk.getMessages().size());
+                                scroll.getQueryHash(),
+                                chunk.getMessages().size());
                         if (output.isClosed()) {
                             LOG.debug("[{}] Client connection is closed, client disconnected. Aborting scroll.",
-                                      scroll.getQueryHash());
+                                    scroll.getQueryHash());
                             scroll.cancel();
                             return;
                         }
