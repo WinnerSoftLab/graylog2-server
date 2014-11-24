@@ -16,6 +16,7 @@
  */
 package org.graylog2.shared.buffers;
 
+import com.codahale.metrics.Gauge;
 import com.codahale.metrics.InstrumentedExecutorService;
 import com.codahale.metrics.InstrumentedThreadFactory;
 import com.codahale.metrics.MetricRegistry;
@@ -48,7 +49,7 @@ public class InputBufferImpl implements InputBuffer {
 
     @Inject
     public InputBufferImpl(MetricRegistry metricRegistry,
-                           BaseConfiguration configuration,
+                           final BaseConfiguration configuration,
                            Provider<DirectMessageHandler> directMessageHandlerProvider,
                            Provider<RawMessageEncoderHandler> rawMessageEncoderHandlerProvider,
                            Provider<JournallingMessageHandler> spoolingMessageHandlerProvider) {
@@ -85,6 +86,13 @@ public class InputBufferImpl implements InputBuffer {
         }
 
         ringBuffer = disruptor.start();
+
+        metricRegistry.register(name(this.getClass(), "ringBufferUsage"), new Gauge<Long>() {
+            @Override
+            public Long getValue() {
+                return configuration.getInputBufferRingSize() - ringBuffer.remainingCapacity();
+            }
+        });
 
         LOG.info("Initialized {} with ring size <{}> and wait strategy <{}>.",
                 this.getClass().getSimpleName(),

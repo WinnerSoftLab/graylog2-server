@@ -16,6 +16,7 @@
  */
 package org.graylog2.shared.buffers;
 
+import com.codahale.metrics.Gauge;
 import com.codahale.metrics.InstrumentedExecutorService;
 import com.codahale.metrics.InstrumentedThreadFactory;
 import com.codahale.metrics.Meter;
@@ -74,6 +75,7 @@ public class ProcessBuffer extends Buffer {
     private final Meter rejectedMessages;
     private final Meter cachedMessages;
 
+    private final MetricRegistry metricRegistry;
     private final ServerStatus serverStatus;
 
     @AssistedInject
@@ -83,6 +85,7 @@ public class ProcessBuffer extends Buffer {
                          DecodingProcessor.Factory decodingProcessorFactory,
                          @Assisted InputCache inputCache,
                          @Assisted AtomicInteger processBufferWatermark) {
+        this.metricRegistry = metricRegistry;
         this.serverStatus = serverStatus;
         this.configuration = configuration;
         this.decodingProcessorFactory = decodingProcessorFactory;
@@ -120,7 +123,7 @@ public class ProcessBuffer extends Buffer {
     }
 
     public void initialize(ProcessBufferProcessor[] processors,
-                           int ringBufferSize,
+                           final int ringBufferSize,
                            WaitStrategy waitStrategy) {
         Disruptor<MessageEvent> disruptor = new Disruptor<>(
                 MessageEvent.EVENT_FACTORY,
@@ -137,6 +140,13 @@ public class ProcessBuffer extends Buffer {
         disruptor.handleEventsWith(decodingProcessorFactory.create(parseTime)).then(processors);
 
         ringBuffer = disruptor.start();
+
+        metricRegistry.register(name(this.getClass(), "ringBufferUsage"), new Gauge<Long>() {
+            @Override
+            public Long getValue() {
+                return ringBufferSize - ringBuffer.remainingCapacity();
+            }
+        });
     }
 
     @Override

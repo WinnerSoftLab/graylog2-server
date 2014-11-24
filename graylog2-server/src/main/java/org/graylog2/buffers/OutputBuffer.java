@@ -16,6 +16,7 @@
  */
 package org.graylog2.buffers;
 
+import com.codahale.metrics.Gauge;
 import com.codahale.metrics.InstrumentedExecutorService;
 import com.codahale.metrics.InstrumentedThreadFactory;
 import com.codahale.metrics.Meter;
@@ -50,6 +51,7 @@ public class OutputBuffer extends Buffer {
 
     private final ExecutorService executor;
 
+    private final MetricRegistry metricRegistry;
     private final OutputBufferWatermark outputBufferWatermark;
 
     private final Configuration configuration;
@@ -68,6 +70,7 @@ public class OutputBuffer extends Buffer {
                         Configuration configuration,
                         OutputCache overflowCache) {
         this.outputBufferProcessorFactory = outputBufferProcessorFactory;
+        this.metricRegistry = metricRegistry;
         this.outputBufferWatermark = outputBufferWatermark;
         this.configuration = configuration;
         this.overflowCache = overflowCache;
@@ -117,6 +120,13 @@ public class OutputBuffer extends Buffer {
         disruptor.handleEventsWith(processors);
 
         ringBuffer = disruptor.start();
+
+        metricRegistry.register(name(this.getClass(), "ringBufferUsage"), new Gauge<Long>() {
+            @Override
+            public Long getValue() {
+                return configuration.getRingSize() - ringBuffer.remainingCapacity();
+            }
+        });
     }
 
     @Override
