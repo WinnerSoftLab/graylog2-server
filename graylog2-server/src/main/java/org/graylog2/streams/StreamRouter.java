@@ -39,6 +39,7 @@ import javax.inject.Inject;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -65,6 +66,7 @@ public class StreamRouter {
     private final TimeLimiter timeLimiter;
 
     final private ConcurrentMap<String, AtomicInteger> faultCounter;
+    private final StreamLookup streamLookup;
 
     @Inject
     public StreamRouter(StreamService streamService,
@@ -82,6 +84,8 @@ public class StreamRouter {
         this.faultCounter = Maps.newConcurrentMap();
         this.executor = executorService();
         this.timeLimiter = new SimpleTimeLimiter(executor);
+
+        this.streamLookup = new StreamLookup(streamService);
     }
 
     private ExecutorService executorService() {
@@ -105,10 +109,26 @@ public class StreamRouter {
         final List<Stream> streams = getStreams();
         msg.recordCounter(serverStatus, "streams-evaluated", streams.size());
 
+        final Timer.Context fastPathTimer = new Timer().time();
+
+        final Set<Stream> streamSet = streamLookup.matches(msg);
+
+        msg.recordTiming(serverStatus, "streams-fast-path", fastPathTimer.stop());
+        msg.recordCounter(serverStatus, "streams-fast-path-matches", streamSet.size());
+
+        if (! streamSet.isEmpty()) {
+            matches.addAll(streamSet);
+        }
+
         final long timeout = configuration.getStreamProcessingTimeout();
         final int maxFaultCount = configuration.getStreamProcessingMaxFaults();
 
+        final Set<Stream> checkedStreams = streamLookup.getCheckedStreams();
+
         for (final Stream stream : streams) {
+            if (checkedStreams.contains(stream)) {
+                continue;
+            }
             final Timer timer = getExecutionTimer(stream.getId());
 
             final Callable<Boolean> task = new Callable<Boolean>() {
