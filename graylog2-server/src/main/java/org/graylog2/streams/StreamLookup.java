@@ -17,6 +17,7 @@
 
 package org.graylog2.streams;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
@@ -38,23 +39,18 @@ public class StreamLookup {
         for (Stream stream : streamService.loadAllEnabled()) {
             final List<StreamRule> streamRules = stream.getStreamRules();
 
-            // Only one rule allowed!
+            // Only one rule allowed for now! The current optimization only works for streams with one rule.
             if (streamRules.size() > 1) {
                 continue;
             }
 
             for (StreamRule rule : streamRules) {
-                String key = null;
+                String key;
                 switch (rule.getType()) {
                     case EXACT:
                         key = rule.getField() + rule.getValue();
                         exactFields.add(rule.getField());
-                        checkedStreams.add(stream);
-                        if (! lookup.containsKey(key)) {
-                            lookup.put(key, Lists.newArrayList(stream));
-                        } else {
-                            lookup.get(key).add(stream);
-                        }
+                        addStream(lookup, checkedStreams, stream, key);
                         break;
                     case GREATER:
                         break;
@@ -65,15 +61,20 @@ public class StreamLookup {
                     case PRESENCE:
                         key = rule.getField();
                         presenceFields.add(key);
-                        checkedStreams.add(stream);
-                        if (! lookup.containsKey(key)) {
-                            lookup.put(key, Lists.newArrayList(stream));
-                        } else {
-                            lookup.get(key).add(stream);
-                        }
+                        addStream(lookup, checkedStreams, stream, key);
                         break;
                 }
             }
+        }
+    }
+
+    private void addStream(Map<String, List<Stream>> lookup, Set<Stream> checkedStreams, Stream stream, String key) {
+        checkedStreams.add(stream);
+
+        if (! lookup.containsKey(key)) {
+            lookup.put(key, Lists.newArrayList(stream));
+        } else {
+            lookup.get(key).add(stream);
         }
     }
 
@@ -99,6 +100,6 @@ public class StreamLookup {
     }
 
     public Set<Stream> getCheckedStreams() {
-        return checkedStreams;
+        return ImmutableSet.copyOf(checkedStreams);
     }
 }
