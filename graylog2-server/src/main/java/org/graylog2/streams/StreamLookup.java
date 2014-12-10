@@ -45,6 +45,11 @@ public class StreamLookup {
             }
 
             for (StreamRule rule : streamRules) {
+                // TODO Support inverted rules!
+                if (rule.getInverted()) {
+                    continue;
+                }
+
                 String key;
                 switch (rule.getType()) {
                     case EXACT:

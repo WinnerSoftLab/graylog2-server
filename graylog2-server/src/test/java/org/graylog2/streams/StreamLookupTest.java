@@ -47,10 +47,12 @@ public class StreamLookupTest {
 
         when(streamRuleExact.getField()).thenReturn("field");
         when(streamRuleExact.getValue()).thenReturn("value");
+        when(streamRuleExact.getInverted()).thenReturn(false);
         when(streamRuleExact.getType()).thenReturn(StreamRuleType.EXACT);
 
         when(streamRulePresence.getField()).thenReturn("presence-field");
         when(streamRulePresence.getValue()).thenReturn("presence-value");
+        when(streamRulePresence.getInverted()).thenReturn(false);
         when(streamRulePresence.getType()).thenReturn(StreamRuleType.PRESENCE);
 
         when(streamRuleGreater.getType()).thenReturn(StreamRuleType.GREATER);
@@ -80,6 +82,26 @@ public class StreamLookupTest {
         lookup = new StreamLookup(streamService);
 
         assertEquals(lookup.matches(message).size(), 0);
+    }
+
+    @Test
+    public void testNegatedExactMatches() throws Exception {
+        when(stream.getStreamRules()).thenReturn(Lists.newArrayList(streamRuleExact));
+        when(streamRuleExact.getInverted()).thenReturn(true);
+
+        StreamLookup lookup = new StreamLookup(streamService);
+
+        assertEquals(lookup.getCheckedStreams().size(), 0);
+    }
+
+    @Test
+    public void testNegatedPresenceMatches() throws Exception {
+        when(stream.getStreamRules()).thenReturn(Lists.newArrayList(streamRulePresence));
+        when(streamRulePresence.getInverted()).thenReturn(true);
+
+        StreamLookup lookup = new StreamLookup(streamService);
+
+        assertEquals(lookup.getCheckedStreams().size(), 0);
     }
 
     @Test
