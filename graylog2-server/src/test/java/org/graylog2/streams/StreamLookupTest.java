@@ -85,19 +85,9 @@ public class StreamLookupTest {
     }
 
     @Test
-    public void testNegatedExactMatches() throws Exception {
+    public void testInvertedExactMatches() throws Exception {
         when(stream.getStreamRules()).thenReturn(Lists.newArrayList(streamRuleExact));
         when(streamRuleExact.getInverted()).thenReturn(true);
-
-        StreamLookup lookup = new StreamLookup(streamService);
-
-        assertEquals(lookup.getCheckedStreams().size(), 0);
-    }
-
-    @Test
-    public void testNegatedPresenceMatches() throws Exception {
-        when(stream.getStreamRules()).thenReturn(Lists.newArrayList(streamRulePresence));
-        when(streamRulePresence.getInverted()).thenReturn(true);
 
         StreamLookup lookup = new StreamLookup(streamService);
 
@@ -129,6 +119,27 @@ public class StreamLookupTest {
 
         assertEquals(lookup.matches(message).size(), 1);
     }
+
+    @Test
+    public void testInvertedPresenceMatches() throws Exception {
+        when(stream.getStreamRules()).thenReturn(Lists.newArrayList(streamRulePresence));
+        when(streamRulePresence.getInverted()).thenReturn(true);
+
+        // With a present field.
+        when(message.getFields()).thenReturn(ImmutableMap.<String, Object>of("presence-field", "value"));
+
+        StreamLookup lookup = new StreamLookup(streamService);
+
+        assertEquals(lookup.matches(message).size(), 0);
+
+        // With no present field.
+        when(message.getFields()).thenReturn(ImmutableMap.<String, Object>of("no-presence-field", "value"));
+
+        lookup = new StreamLookup(streamService);
+
+        assertEquals(lookup.matches(message).size(), 1);
+    }
+
 
     @Test
     public void testGetCheckedStreams() throws Exception {

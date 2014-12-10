@@ -32,6 +32,7 @@ import java.util.Set;
 public class StreamLookup {
     private final Map<String, List<Stream>> lookup = Maps.newHashMap();
     private final Set<String> presenceFields = Sets.newHashSet();
+    private final Set<String> presenceFieldsInverted = Sets.newHashSet();
     private final Set<String> exactFields = Sets.newHashSet();
     private final Set<Stream> checkedStreams = Sets.newHashSet();
 
@@ -45,14 +46,14 @@ public class StreamLookup {
             }
 
             for (StreamRule rule : streamRules) {
-                // TODO Support inverted rules!
-                if (rule.getInverted()) {
-                    continue;
-                }
-
                 String key;
                 switch (rule.getType()) {
                     case EXACT:
+                        // TODO Support inverted exact rules!
+                        if (rule.getInverted()) {
+                            continue;
+                        }
+
                         key = rule.getField() + rule.getValue();
                         exactFields.add(rule.getField());
                         addStream(lookup, checkedStreams, stream, key);
@@ -66,6 +67,9 @@ public class StreamLookup {
                     case PRESENCE:
                         key = rule.getField();
                         presenceFields.add(key);
+                        if (rule.getInverted()) {
+                            presenceFieldsInverted.add(key);
+                        }
                         addStream(lookup, checkedStreams, stream, key);
                         break;
                 }
@@ -88,7 +92,13 @@ public class StreamLookup {
         final Map<String, Object> fields = msg.getFields();
 
         for (final String field : presenceFields) {
-            if (fields.containsKey(field)) {
+            if (fields.containsKey(field) && !presenceFieldsInverted.contains(field)) {
+                streams.addAll(lookup.get(field));
+            }
+        }
+
+        for (final String field : presenceFieldsInverted) {
+            if (! fields.containsKey(field)) {
                 streams.addAll(lookup.get(field));
             }
         }
